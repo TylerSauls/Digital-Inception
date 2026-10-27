@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Digital Inception</title>
+<style>
+:root{color-scheme:dark;--bg:#070b24;--fg:#e8ecff;--ac:#6ea8ff;--mut:#8f9bd0;--card:#101640;--pink:#ff6aa8;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#16205a,var(--bg));color:var(--fg);font-family:Montserrat,system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
+main{max-width:1040px;margin:0 auto;padding:20px 16px 36px}
+h1{font-family:"Arial Narrow",Impact,system-ui,sans-serif;font-weight:800;letter-spacing:.06em;text-transform:uppercase;font-size:clamp(28px,6vw,52px);margin:0;line-height:1}
+.by{color:var(--ac);font-size:13px;margin:6px 0 16px}
+.stage{border-radius:14px;overflow:hidden;box-shadow:0 0 0 1px #2a3680,0 20px 60px #0008;background:#000;aspect-ratio:16/9}
+canvas{width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+.bar{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;margin-top:14px;background:var(--card);padding:12px 14px;border-radius:12px;border:1px solid #232d70}
+button{font:inherit;font-weight:600;font-size:13px;color:#06102e;background:var(--ac);border:0;border-radius:999px;padding:9px 16px;cursor:pointer}
+button.alt{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--mut);letter-spacing:.05em;text-transform:uppercase;min-width:120px;flex:1}
+input[type=range]{width:100%;accent-color:var(--ac)}
+input[type=text]{font:inherit;font-size:13px;color:var(--fg);background:#0a0f33;border:1px solid #2f3b92;border-radius:999px;padding:9px 14px;flex:1;min-width:0}
+.row2{display:flex;gap:8px;flex:2 1 280px;min-width:220px}
+#counts{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:12px;font-size:12px;color:var(--mut)}
+#counts b{color:var(--fg)}
+#status{font-size:12px;color:var(--mut);margin-top:6px;min-height:16px}
+#stack{margin-top:14px;display:grid;gap:6px}
+.lay{display:grid;grid-template-columns:70px 1fr 48px;gap:10px;align-items:center;font-size:12px;color:var(--mut)}
+.lay i{display:block;height:6px;border-radius:3px;background:#1a2260;overflow:hidden}
+.lay i em{display:block;height:100%;background:linear-gradient(90deg,var(--pink),var(--ac))}
+.lay span:last-child{text-align:right;color:var(--fg)}
+.note{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:22px}
+.note div{background:var(--card);border:1px solid #232d70;border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.55;color:var(--mut)}
+.note b{display:block;color:var(--fg);font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Digital Inception</h1>
+  <div class="by">After the concept by Ian Jarchevski and Tyler Sauls</div>
+
+  <div class="stage"><canvas id="c" width="960" height="540"></canvas></div>
+
+  <div class="bar">
+    <button id="cam">Start camera</button>
+    <button id="demo" class="alt">Demo mode</button>
+    <button id="clear" class="alt">Clear drawing</button>
+    <label>Echo delay<input id="delay" type="range" min="2" max="12" value="9"></label>
+    <label>Dead internet<input id="dead" type="range" min="0" max="100" value="50"></label>
+    <label>Screen size<input id="size" type="range" min="140" max="560" value="346"></label>
+    <div class="row2"><input id="msg" type="text" maxlength="40" placeholder="Post to the shared feed…"><button id="post">Post</button></div>
+  </div>
+  <div id="counts"></div>
+  <div id="status">Draw on the room to create. Drag the screen to move it. Tap a feed post to test whether its author is human.</div>
+  <div id="stack"></div>
+
+  <div class="note">
+    <div><b>Shared space</b>The feed is the commons. Everyone in it looks like a user, and you only know you’re human because you’re the one typing.</div>
+    <div><b>Creator and creation</b>What you draw or post is a creation. The layers watching it are observers, and each one is watched by the next.</div>
+    <div><b>Droste effect</b>The screen holds the room, the room holds the screen, and so on without end. Each layer is a slightly older echo of the one above.</div>
+    <div><b>Dead internet</b>Going deeper, human presence drains away. Layers blur into pixels, your drawings get remixed, and your posts come back as bot speech.</div>
+  </div>
+</main>
+
+<script>
+(function(){
+  var W=960,H=540,FW=384,FH=216,RING=80,DEPTH=6;
+  function $(id){return document.getElementById(id)}
+  function mk(w,h){var c=document.createElement('canvas');c.width=w;c.height=h;return c}
+  function hash(n){n=Math.sin(n*127.1)*43758.5453;return n-Math.floor(n)}
+
+  var cv=$('c'),ctx=cv.getContext('2d');
+  var src=mk(W,H),sctx=src.getContext('2d');
+  var ring=[];for(var i=0;i<RING;i++)ring.push(mk(FW,FH));
+  var tiny=mk(256,144),tctx=tiny.getContext('2d');
+  var vid=document.createElement('video');vid.playsInline=true;vid.muted=true;
+  var head=0,count=0,t=0,frame=0,live=false;
+  var S={dead:.5,delay:9};
+  var SW=W*.36,SH=SW*H/W,SX=W*.58,SY=H*.16;
+  var strokes=[],drawing=null,drag=null,moved=false,ptr=null,feedRects=[];
+  var posts=[],nextId=1,acc=4812;
+  var templates=["great post!!","first","is anyone real here?","as an AI language model…","so true","who is watching?","follow for follow","this changed my life (ad)","wow just wow","check my profile","who observes the observer?","are you the observer?"];
+
+  function addPost(text,human,handle){
+    posts.push({id:nextId++,text:text,human:human,handle:handle||('user_'+(1000+Math.random()*8999|0)),rev:false});
+    if(posts.length>14)posts.shift();
+  }
+  addPost(templates[0],false);addPost(templates[2],false);addPost(templates[10],false);
+
+  function say(m){$('status').textContent=m}
+  function hum(k){return k===0?1:Math.max(0,1-k*(.08+S.dead*.28))}
+  function ridx(k){var d=k*S.delay;if(d>=count)d=count-1;return ring[(head-d+RING*2)%RING]}
+
+  /* ---------- controls ---------- */
+  $('delay').addEventListener('input',function(){S.delay=+this.value});
+  $('dead').addEventListener('input',function(){S.dead=this.value/100});
+  var sizeEl=$('size');
+  function clampScreen(){SX=Math.max(10,Math.min(W-SW-10,SX));SY=Math.max(24,Math.min(H-SH-44,SY))}
+  function resize(w){var cx=SX+SW/2,cy=SY+SH/2;SW=Math.max(140,Math.min(560,w));SH=SW*H/W;SX=cx-SW/2;SY=cy-SH/2;clampScreen();sizeEl.value=Math.round(SW)}
+  sizeEl.addEventListener('input',function(){resize(+sizeEl.value)});
+  $('clear').addEventListener('click',function(){strokes=[];drawing=null});
+
+  async function startCam(){
+    try{
+      var st=await navigator.mediaDevices.getUserMedia({video:{width:1280,height:720,facingMode:'user'},audio:false});
+      vid.srcObject=st;await vid.play();live=true;$('cam').textContent='Camera on';
+      say('You are the observer. Lean in, draw, post, and watch yourself get replaced.');
+    }catch(e){live=false;say('Camera unavailable here, so the demo scene is running. Open the page in its own tab and allow access to use your webcam.')}
+  }
+  $('cam').addEventListener('click',startCam);
+  $('demo').addEventListener('click',function(){
+    if(vid.srcObject){vid.srcObject.getTracks().forEach(function(x){x.stop()});vid.srcObject=null}
+    live=false;$('cam').textContent='Start camera';say('Demo mode: a simulated observer at a gallery terminal.');
+  });
+
+  function postComment(){
+    var inp=$('msg'),s=inp.value.trim().slice(0,40);
+    if(!s)return;inp.value='';addPost(s,true,'you');
+  }
+  $('post').addEventListener('click',postComment);
+  $('msg').addEventListener('keydown',function(e){if(e.key==='Enter')postComment()});
+
+  /* ---------- pointer ---------- */
+  function pos(e){var r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}}
+  function onScreen(p){return p.x>=SX-8&&p.x<=SX+SW+8&&p.y>=SY-8&&p.y<=SY+SH+26}
+  cv.addEventListener('pointerdown',function(e){
+    var p=pos(e);ptr=p;moved=false;
+    for(var i=0;i<feedRects.length;i++){var r=feedRects[i];if(p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h){r.p.rev=true;return}}
+    cv.setPointerCapture(e.pointerId);
+    if(onScreen(p)){drag={dx:p.x-SX,dy:p.y-SY};cv.style.cursor='grabbing'}
+    else{drawing={pts:[{x:p.x,y:p.y}],t:performance.now()};strokes.push(drawing)}
+  });
+  cv.addEventListener('pointermove',function(e){
+    var p=pos(e);ptr=p;
+    if(drag){moved=true;SX=p.x-drag.dx;SY=p.y-drag.dy;clampScreen()}
+    else if(drawing){drawing.pts.push({x:p.x,y:p.y});drawing.t=performance.now()}
+    else cv.style.cursor=onScreen(p)?'grab':'crosshair';
+  });
+  function end(){drag=null;drawing=null;cv.style.cursor='crosshair'}
+  cv.addEventListener('pointerup',end);cv.addEventListener('pointercancel',end);
+  cv.addEventListener('pointerleave',function(){if(!drag&&!drawing)ptr=null});
+  cv.addEventListener('wheel',function(e){e.preventDefault();resize(SW*(e.deltaY<0?1.08:.93))},{passive:false});
+
+  /* ---------- scene source (room + your creations, no laptop) ---------- */
+  function drawDemo(c){
+    var g=c.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#cfd5e6');g.addColorStop(.7,'#aeb6cf');g.addColorStop(.7,'#4a4f66');g.addColorStop(1,'#2a2d40');
+    c.fillStyle=g;c.fillRect(0,0,W,H);
+    c.fillStyle='#2b3050';
+    [[560,.7,1],[640,.72,.9],[880,.71,.95]].forEach(function(p){
+      var x=p[0],s=p[2],y=H*p[1];
+      c.beginPath();c.arc(x,y-92*s,14*s,0,7);c.fill();c.fillRect(x-16*s,y-76*s,32*s,76*s);
+    });
+    c.fillStyle='#e9ecf5';c.fillRect(W*.12,H*.62,W*.36,10);
+    c.fillStyle='#8b91ab';c.fillRect(W*.14,H*.62+10,8,H*.28);c.fillRect(W*.45,H*.62+10,8,H*.28);
+    var bob=Math.sin(t*.05)*3,hx=W*.3;
+    c.fillStyle='#1b1f3a';
+    c.beginPath();c.arc(hx,H*.34+bob,30,0,7);c.fill();
+    c.beginPath();c.rect(hx-48,H*.34+bob+30,96,130);c.fill();
+    c.strokeStyle='#1b1f3a';c.lineWidth=16;c.lineCap='round';
+    var k=Math.sin(t*.4)*6;
+    c.beginPath();c.moveTo(hx-36,H*.34+bob+60);c.lineTo(hx-20,H*.55);c.lineTo(hx+10+k,H*.6);c.stroke();
+    c.beginPath();c.moveTo(hx+36,H*.34+bob+60);c.lineTo(hx+34,H*.55);c.lineTo(hx+30-k,H*.6);c.stroke();
+    c.fillStyle='#10142e';c.fillRect(hx+10,H*.5,70,48);c.fillStyle='#6ea8ff';c.fillRect(hx+15,H*.5+5,60,38);
+  }
+  function strokesDraw(c,mult,dx,dy,col){
+    var now=performance.now();
+    c.lineCap='round';c.lineJoin='round';c.lineWidth=4;c.strokeStyle=col;
+    c.shadowColor=col;c.shadowBlur=8;
+    for(var s=0;s<strokes.length;s++){
+      var st=strokes[s],a=Math.max(0,1-(now-st.t)/7000)*mult;
+      if(st===drawing)a=mult;
+      if(a<=0)continue;
+      c.globalAlpha=a;c.beginPath();
+      c.moveTo(st.pts[0].x+dx,st.pts[0].y+dy);
+      if(st.pts.length===1)c.lineTo(st.pts[0].x+dx+.1,st.pts[0].y+dy);
+      for(var i=1;i<st.pts.length;i++)c.lineTo(st.pts[i].x+dx,st.pts[i].y+dy);
+      c.stroke();
+    }
+    c.globalAlpha=1;c.shadowBlur=0;
+  }
+  function buildSource(){
+    var c=sctx;
+    if(live&&vid.videoWidth){
+      var vw=vid.videoWidth,vh=vid.videoHeight,sc=Math.max(W/vw,H/vh),dw=vw*sc,dh=vh*sc;
+      c.save();c.translate(W,0);c.scale(-1,1);c.drawImage(vid,(W-dw)/2,(H-dh)/2,dw,dh);c.restore();
+      c.fillStyle='rgba(6,10,36,.28)';c.fillRect(0,0,W,H);
+    }else drawDemo(c);
+    var now=performance.now();
+    strokes=strokes.filter(function(s){return s===drawing||now-s.t<7000});
+    strokesDraw(c,1,0,0,'#9fd0ff');
+    if(ptr){
+      c.save();c.strokeStyle='rgba(255,230,140,.95)';c.lineWidth=2;c.shadowColor='#ffd966';c.shadowBlur=10;
+      c.beginPath();c.arc(ptr.x,ptr.y,9+Math.sin(t*.2)*2,0,7);c.stroke();c.restore();
+    }
+  }
+
+  /* ---------- recursive observer layers ---------- */
+  function scr(text,k,id,h){
+    var junk='aeiou#*?',rate=.2+(1-h)*.5;
+    return text.split('').map(function(ch,i){
+      var r=hash(ch.charCodeAt(0)+i*7+k*13+id*3);
+      return /[a-z]/i.test(ch)&&r<rate?junk[(r*1000|0)%junk.length]:ch;
+    }).join('');
+  }
+  function drawFeed(k,h){
+    var x=22,y=H-196,w=310,rowH=36,list=posts.slice(-4),synth=k>0&&h<.6;
+    ctx.fillStyle='rgba(6,10,36,.74)';ctx.fillRect(x,y,w,176);
+    ctx.font='bold 11px Montserrat,system-ui,sans-serif';ctx.fillStyle='#8f9bd0';
+    ctx.fillText('THE FEED  ·  shared space',x+10,y+16);
+    for(var j=0;j<list.length;j++){
+      var p=list[j],ry=y+26+j*rowH;
+      var hd=synth?'bot_'+(((p.id*2654435761+k*97)>>>0).toString(16).slice(0,4)):p.handle;
+      var tx=synth?scr(p.text,k,p.id,h):p.text;
+      ctx.font='bold 11px Montserrat,system-ui,sans-serif';
+      ctx.fillStyle=p.human&&!synth?'#ffe28a':synth?'#ff9ab8':'#b4d2ff';
+      ctx.fillText(hd,x+10,ry+12);
+      ctx.font='12px Montserrat,system-ui,sans-serif';ctx.fillStyle='#e8ecff';
+      ctx.fillText(tx,x+10,ry+28,w-20);
+      if(k===0){
+        feedRects.push({x:x,y:ry-2,w:w,h:rowH,p:p});
+        if(p.rev){ctx.font='bold 10px Montserrat,system-ui,sans-serif';ctx.fillStyle=p.human?'#7dffb0':'#ff6a7a';ctx.fillText(p.human?'HUMAN':'BOT',x+w-52,ry+12)}
+      }
+    }
+  }
+  function synthLayer(img,k,h){
+    var pw=Math.max(16,Math.round(24+h*200)),ph=Math.round(pw*9/16)+1;
+    tctx.clearRect(0,0,256,144);tctx.drawImage(img,0,0,pw,ph);
+    ctx.imageSmoothingEnabled=false;ctx.drawImage(tiny,0,0,pw,ph,0,0,W,H);ctx.imageSmoothingEnabled=true;
+    ctx.fillStyle='rgba(255,60,150,'+(.25+(1-h)*.35).toFixed(3)+')';ctx.fillRect(0,0,W,H);
+    var seed=k*17+Math.floor(frame/24);
+    for(var i=0;i<7;i++){
+      ctx.fillStyle='rgba(180,255,220,'+(.08+(1-h)*.12).toFixed(3)+')';
+      ctx.fillRect(hash(seed+i)*W,hash(seed+i*3+1)*H,40+hash(seed+i*5)*140,12+hash(seed+i*7)*30);
+    }
+    ctx.font='bold 16px Montserrat,system-ui,sans-serif';ctx.fillStyle='rgba(255,255,255,.35)';
+    ctx.fillText('GENERATED',W*.62,H*.1+hash(seed)*40);
+    strokesDraw(ctx,.6,Math.sin(frame*.03+k)*10,Math.cos(frame*.02+k*2)*10,'#ff6aa8'); // bots remix your creation
+  }
+  function level(k){
+    var h=hum(k);
+    ctx.save();ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();
+    var img=k===0?src:ridx(k);
+    if(k>0&&h<.5)synthLayer(img,k,h);
+    else{
+      ctx.drawImage(img,0,0,W,H);
+      if(k>0){ctx.fillStyle='rgba(255,70,150,'+((1-h)*.25).toFixed(3)+')';ctx.fillRect(0,0,W,H)}
+    }
+    drawFeed(k,h);
+    laptop(k);
+    ctx.restore();
+  }
+  function laptop(k){
+    ctx.fillStyle='#0b0f26';
+    ctx.beginPath();ctx.moveTo(SX-18,SY+SH+8);ctx.lineTo(SX+SW+18,SY+SH+8);ctx.lineTo(SX+SW+36,SY+SH+26);ctx.lineTo(SX-36,SY+SH+26);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#d9deee';ctx.fillRect(SX+SW*.25,SY+SH+26,SW*.5,H-(SY+SH+26));
+    if(k<2){ctx.shadowColor='#6ea8ff';ctx.shadowBlur=24}
+    ctx.fillStyle='#0b0f26';ctx.fillRect(SX-8,SY-8,SW+16,SH+16);
+    ctx.shadowBlur=0;
+    ctx.save();ctx.beginPath();ctx.rect(SX,SY,SW,SH);ctx.clip();
+    if(k<DEPTH){ctx.translate(SX,SY);ctx.scale(SW/W,SH/H);level(k+1)}
+    else{ctx.fillStyle='#000';ctx.fillRect(SX,SY,SW,SH)}
+    ctx.restore();
+    ctx.save();ctx.strokeStyle='rgba(130,190,255,.9)';ctx.lineWidth=2;
+    if(k<2){ctx.shadowColor='#6ea8ff';ctx.shadowBlur=16}
+    ctx.strokeRect(SX-8,SY-8,SW+16,SH+16);ctx.restore();
+  }
+
+  /* ---------- HUD ---------- */
+  function hud(){
+    var out='';
+    for(var k=0;k<=DEPTH;k++){
+      var h=hum(k),pct=Math.round(h*100);
+      var d=k===0?'You: the observer and the creator':'Watches layer '+(k-1)+' · '+(h>=.7?'human echo':h>=.4?'blurring':h>0?'synthetic':'pure bot');
+      out+='<div class="lay"><span>Layer '+k+'</span><div><div style="margin-bottom:3px">'+d+'</div><i><em style="width:'+pct+'%"></em></i></div><span>'+pct+'%</span></div>';
+    }
+    $('stack').innerHTML=out;
+  }
+  function counts(){
+    $('counts').innerHTML='<span>Accounts in this space: <b>'+acc.toLocaleString('en-US')+'</b></span><span>Verified humans: <b>1</b> (you)</span><span>Posts seen: <b>'+(nextId-1)+'</b></span>';
+  }
+
+  /* ---------- main loop ---------- */
+  function loop(){
+    t++;frame++;
+    if(frame%Math.max(50,Math.floor(200-S.dead*150))===0)addPost(templates[Math.random()*templates.length|0],false);
+    if(frame%30===0){acc+=Math.floor(Math.random()*12)-3;counts()}
+    if(frame%12===0)hud();
+    buildSource();
+    head=(head+1)%RING;ring[head].getContext('2d').drawImage(src,0,0,FW,FH);count=Math.min(count+1,RING);
+    feedRects=[];
+    ctx.clearRect(0,0,W,H);
+    level(0);
+    ctx.font='bold 13px Montserrat,system-ui,sans-serif';
+    ctx.fillStyle='rgba(232,236,255,.92)';ctx.fillText(live?'THE OBSERVER · YOU':'THE OBSERVER',18,28);
+    ctx.fillStyle='rgba(110,168,255,.95)';ctx.fillText('THE OBSERVED',SX-8,SY-18);
+    ctx.textAlign='right';ctx.fillStyle='rgba(232,236,255,.55)';ctx.fillText('WHO OBSERVES THE OBSERVER?',W-18,28);ctx.textAlign='left';
+    requestAnimationFrame(loop);
+  }
+  hud();counts();loop();
+})();
+</script>
+</body>
+</html>
